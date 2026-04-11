@@ -1905,353 +1905,342 @@ with tab_scatter:
             key="sc_preset"
         )
 
-    all_sc_stats = _all_scatter_stats(df_raw)
-    stat_labels_map = {c: f"{_stat_label(c)}  [{c}]" for c in all_sc_stats}
-    label_to_col    = {v: k for k, v in stat_labels_map.items()}
-
-    # Domyslne osie z presetu
-    if sc_preset != "— własny wybór —" and sc_preset in SCATTER_PRESETS:
-        default_x, default_y = SCATTER_PRESETS[sc_preset]
-        default_x = default_x if default_x in all_sc_stats else all_sc_stats[0]
-        default_y = default_y if default_y in all_sc_stats else all_sc_stats[1]
-    else:
-        default_x = all_sc_stats[0] if all_sc_stats else None
-        default_y = all_sc_stats[1] if len(all_sc_stats) > 1 else None
-
-    with custom_col:
-        ax_col1, ax_col2, ax_col3 = st.columns(3)
-        with ax_col1:
-            x_label = st.selectbox(
-                "Oś X", list(stat_labels_map.values()),
-                index=list(stat_labels_map.keys()).index(default_x)
-                      if default_x in stat_labels_map else 0,
-                key="sc_x"
-            )
-        with ax_col2:
-            y_label = st.selectbox(
-                "Oś Y", list(stat_labels_map.values()),
-                index=list(stat_labels_map.keys()).index(default_y)
-                      if default_y in stat_labels_map else 1,
-                key="sc_y"
-            )
-        with ax_col3:
-            size_opts = ["— brak —"] + list(stat_labels_map.values())
-            sc_size_label = st.selectbox(
-                "Rozmiar (opcja)", size_opts,
-                index=0, key="sc_size"
-            )
-
-    x_col    = label_to_col.get(x_label)
-    y_col    = label_to_col.get(y_label)
-    size_col = label_to_col.get(sc_size_label) if sc_size_label != "— brak —" else None
-
     sc_submit = st.button("📈 Apply & Draw", key="sc_submit",
                           use_container_width=True, type="primary")
 
-    if not x_col or not y_col:
-        st.error("Wybierz statystyki dla obu osi.")
+    if not sc_submit:
+        st.info("Ustaw opcje i kliknij **Apply & Draw**.")
     elif not sc_leagues:
         st.info("Wybierz co najmniej jedną ligę.")
-    elif not sc_submit:
-        st.info("Ustaw opcje i kliknij **Apply & Draw**.")
     else:
-        # ── Budowanie datasetu ───────────────────────────────────────
-        pos_col_sc = next(
-            (c for c in ['Primary position', 'Position', 'position', 'Pos']
-             if c in df_raw.columns), None
-        )
-        nc_sc = 'Full name' if 'Full name' in df_raw.columns else 'Player'
-        tc_sc = next((c for c in ['Team within selected timeframe', 'Team'] if c in df_raw.columns), None)
+        # Oblicz listy statystyk dopiero po kliknięciu Apply
+        all_sc_stats = _all_scatter_stats(df_raw)
+        stat_labels_map = {c: f"{_stat_label(c)}  [{c}]" for c in all_sc_stats}
+        label_to_col    = {v: k for k, v in stat_labels_map.items()}
 
-        df_sc = df_raw.copy()
-        df_sc['_main_pos'] = (df_sc[pos_col_sc].astype(str)
-                              .str.split(',').str[0].str.strip()
-                              if pos_col_sc else 'N/A')
-        df_sc['_minutes']  = pd.to_numeric(
-            df_sc.get('Minutes played', 0), errors='coerce'
-        ).fillna(0)
-
-        # Filtr ligowy
-        mask_lg = df_sc[league_col].astype(str).apply(_league_key).isin(
-            [_league_key(l) for l in sc_leagues]
-        )
-        df_sc = df_sc[mask_lg & (df_sc['_minutes'] >= sc_min)].copy()
-
-        # Filtr pozycji — uzywa SCATTER_POS_ALLOWED (ostre granice, bez bledu)
-        if sc_pos_groups:
-            allowed_pos = set()
-            for grp in sc_pos_groups:
-                allowed_pos.update(SCATTER_POS_ALLOWED.get(grp, set()))
-            df_sc = df_sc[df_sc['_main_pos'].isin(allowed_pos)]
-
-        # Oznacz grupe pozycyjna — uzywa _POS_TO_SCATTER_GROUP (CM/AM bez DM!)
-        df_sc['_pos_group'] = df_sc['_main_pos'].map(_POS_TO_SCATTER_GROUP).fillna(df_sc['_main_pos'])
-
-        # Konwertuj osie
-        df_sc['_x']    = pd.to_numeric(df_sc[x_col],    errors='coerce')
-        df_sc['_y']    = pd.to_numeric(df_sc[y_col],    errors='coerce')
-        if size_col:
-            df_sc['_sz'] = pd.to_numeric(df_sc[size_col], errors='coerce').fillna(0)
-        df_sc = df_sc.dropna(subset=['_x', '_y'])
-
-        if df_sc.empty:
-            st.warning("Brak danych dla wybranych filtrów.")
+        if sc_preset != "— własny wybór —" and sc_preset in SCATTER_PRESETS:
+            default_x, default_y = SCATTER_PRESETS[sc_preset]
+            default_x = default_x if default_x in all_sc_stats else all_sc_stats[0]
+            default_y = default_y if default_y in all_sc_stats else all_sc_stats[1]
         else:
-            # ── Highlight gracza ─────────────────────────────────────
-            sc_hl_col, sc_label_col = st.columns([2, 1])
-            with sc_hl_col:
-                all_players_sc = sorted(
-                    df_sc[nc_sc].dropna().astype(str).str.strip().unique().tolist()
-                )
-                sc_highlight = st.multiselect(
-                    "Zaznacz gracza/y",
-                    all_players_sc, default=[], key="sc_hl"
-                )
-            with sc_label_col:
-                sc_show_labels = st.checkbox(
-                    "Pokaż etykiety", value=False, key="sc_labels"
-                )
+            default_x = all_sc_stats[0] if all_sc_stats else None
+            default_y = all_sc_stats[1] if len(all_sc_stats) > 1 else None
 
-            # ── Paleta kolorów ───────────────────────────────────────
-            PALETTE = [
-                "#00BFFF","#FF6B35","#2DCA72","#FFD700","#E040FB",
-                "#FF4444","#00E5FF","#FF9800","#69F0AE","#EA80FC",
-                "#F06292","#80D8FF","#CCFF90","#FFD180","#B9F6CA",
-            ]
+        # Resolve axis columns from saved session_state keys (set by selectboxes above)
+        x_label      = st.session_state.get("sc_x")
+        y_label      = st.session_state.get("sc_y")
+        sc_size_label = st.session_state.get("sc_size", "— brak —")
 
-            if sc_color_by == "Pozycja":
-                color_key = '_pos_group'
-            elif sc_color_by == "Liga":
-                color_key = league_col
-            else:
-                color_key = tc_sc if tc_sc else '_pos_group'
+        # Fallback: use preset defaults if session keys not yet set
+        if not x_label or x_label not in label_to_col:
+            x_label = stat_labels_map.get(default_x, list(stat_labels_map.values())[0])
+        if not y_label or y_label not in label_to_col:
+            y_label = stat_labels_map.get(default_y, list(stat_labels_map.values())[1])
 
-            color_vals  = df_sc[color_key].astype(str).fillna('N/A')
-            unique_vals = sorted(color_vals.unique())
-            color_map   = {v: PALETTE[i % len(PALETTE)] for i, v in enumerate(unique_vals)}
+        x_col    = label_to_col.get(x_label)
+        y_col    = label_to_col.get(y_label)
+        size_col = label_to_col.get(sc_size_label) if sc_size_label and sc_size_label != "— brak —" else None
 
-            # ── Linie sredniej (kwadranty) ───────────────────────────
-            x_med = float(df_sc['_x'].median())
-            y_med = float(df_sc['_y'].median())
-
-            # ── Rozmiar bąbli ────────────────────────────────────────
-            if size_col and '_sz' in df_sc.columns:
-                sz_min, sz_max = df_sc['_sz'].min(), df_sc['_sz'].max()
-                sz_range = sz_max - sz_min if sz_max > sz_min else 1
-                marker_sizes = (
-                    6 + 18 * (df_sc['_sz'] - sz_min) / sz_range
-                ).clip(4, 24).tolist()
-            else:
-                marker_sizes = [8] * len(df_sc)
-
-            # ── Buduj wykres Plotly ──────────────────────────────────
-            fig_sc = go.Figure()
-
-            # Linie sredniej — kwadranty
-            x_range_pad = (df_sc['_x'].max() - df_sc['_x'].min()) * 0.05
-            y_range_pad = (df_sc['_y'].max() - df_sc['_y'].min()) * 0.05
-            x_lo = float(df_sc['_x'].min()) - x_range_pad
-            x_hi = float(df_sc['_x'].max()) + x_range_pad
-            y_lo = float(df_sc['_y'].min()) - y_range_pad
-            y_hi = float(df_sc['_y'].max()) + y_range_pad
-
-            fig_sc.add_shape(type="line",
-                x0=x_med, x1=x_med, y0=y_lo, y1=y_hi,
-                line=dict(color="#2a3a4e", width=1, dash="dot"), layer="below"
+        if not x_col or not y_col:
+            st.error("Wybierz statystyki dla obu osi.")
+        else:
+            # ── Budowanie datasetu ───────────────────────────────────────
+            pos_col_sc = next(
+                (c for c in ['Primary position', 'Position', 'position', 'Pos']
+                 if c in df_raw.columns), None
             )
-            fig_sc.add_shape(type="line",
-                x0=x_lo, x1=x_hi, y0=y_med, y1=y_med,
-                line=dict(color="#2a3a4e", width=1, dash="dot"), layer="below"
+            nc_sc = 'Full name' if 'Full name' in df_raw.columns else 'Player'
+            tc_sc = next((c for c in ['Team within selected timeframe', 'Team'] if c in df_raw.columns), None)
+
+            df_sc = df_raw.copy()
+            df_sc['_main_pos'] = (df_sc[pos_col_sc].astype(str)
+                                  .str.split(',').str[0].str.strip()
+                                  if pos_col_sc else 'N/A')
+            df_sc['_minutes']  = pd.to_numeric(
+                df_sc.get('Minutes played', 0), errors='coerce'
+            ).fillna(0)
+
+            # Filtr ligowy
+            mask_lg = df_sc[league_col].astype(str).apply(_league_key).isin(
+                [_league_key(l) for l in sc_leagues]
             )
-            # Etykiety kwadrantow
-            x_lbl_r = _stat_label(x_col)
-            y_lbl_r = _stat_label(y_col)
-            quadrant_labels = [
-                (x_hi, y_hi, "↗",  "top right",    "Wysoki X + Y"),
-                (x_lo, y_hi, "↖",  "top left",     "Niski X, Wysoki Y"),
-                (x_hi, y_lo, "↘",  "bottom right", "Wysoki X, Niski Y"),
-                (x_lo, y_lo, "↙",  "bottom left",  "Niski X + Y"),
-            ]
-            for qx, qy, qarrow, qpos, qtip in quadrant_labels:
-                fig_sc.add_annotation(
-                    x=qx, y=qy, text=qarrow,
-                    showarrow=False,
-                    font=dict(size=18, color="#2a3a4e"),
-                    xanchor="center", yanchor="middle",
-                )
+            df_sc = df_sc[mask_lg & (df_sc['_minutes'] >= sc_min)].copy()
 
-            # Trace per grupa kolorów
-            for val in unique_vals:
-                mask_v = color_vals == val
-                df_v   = df_sc[mask_v]
-                szs    = [marker_sizes[i] for i in df_v.index.map(
-                    lambda i: df_sc.index.get_loc(i)
-                )] if hasattr(df_sc.index, 'get_loc') else [8] * len(df_v)
+            # Filtr pozycji — uzywa SCATTER_POS_ALLOWED (ostre granice, bez bledu)
+            if sc_pos_groups:
+                allowed_pos = set()
+                for grp in sc_pos_groups:
+                    allowed_pos.update(SCATTER_POS_ALLOWED.get(grp, set()))
+                df_sc = df_sc[df_sc['_main_pos'].isin(allowed_pos)]
 
-                # Oblicz rozmiary dla tej grupy
-                idx_list = [df_sc.index.get_loc(i) for i in df_v.index]
-                szs_v    = [marker_sizes[i] for i in idx_list]
+            # Oznacz grupe pozycyjna — uzywa _POS_TO_SCATTER_GROUP (CM/AM bez DM!)
+            df_sc['_pos_group'] = df_sc['_main_pos'].map(_POS_TO_SCATTER_GROUP).fillna(df_sc['_main_pos'])
 
-                # Hover text
-                hover_texts = []
-                for _, row in df_v.iterrows():
-                    name  = str(row.get(nc_sc, '?')).strip()
-                    team  = str(row.get(tc_sc, '')).strip() if tc_sc else ''
-                    lg    = str(row.get(league_col, '')).strip()
-                    pos_v = str(row.get('_main_pos', '')).strip()
-                    xv    = row['_x']
-                    yv    = row['_y']
-                    mins  = int(row.get('_minutes', 0))
-                    ht = (
-                        f"<b>{name}</b><br>"
-                        f"{team} · {lg}<br>"
-                        f"Poz: {pos_v} · {mins} min<br>"
-                        f"<b>{_stat_label(x_col)}: {xv:.2f}</b><br>"
-                        f"<b>{_stat_label(y_col)}: {yv:.2f}</b>"
+            # Konwertuj osie
+            df_sc['_x']    = pd.to_numeric(df_sc[x_col],    errors='coerce')
+            df_sc['_y']    = pd.to_numeric(df_sc[y_col],    errors='coerce')
+            if size_col:
+                df_sc['_sz'] = pd.to_numeric(df_sc[size_col], errors='coerce').fillna(0)
+            df_sc = df_sc.dropna(subset=['_x', '_y'])
+
+            if df_sc.empty:
+                st.warning("Brak danych dla wybranych filtrów.")
+            else:
+                # ── Highlight gracza ─────────────────────────────────────
+                sc_hl_col, sc_label_col = st.columns([2, 1])
+                with sc_hl_col:
+                    all_players_sc = sorted(
+                        df_sc[nc_sc].dropna().astype(str).str.strip().unique().tolist()
                     )
-                    if size_col and '_sz' in row.index:
-                        ht += f"<br>{_stat_label(size_col)}: {row['_sz']:.2f}"
-                    hover_texts.append(ht)
+                    sc_highlight = st.multiselect(
+                        "Zaznacz gracza/y",
+                        all_players_sc, default=[], key="sc_hl"
+                    )
+                with sc_label_col:
+                    sc_show_labels = st.checkbox(
+                        "Pokaż etykiety", value=False, key="sc_labels"
+                    )
 
-                # Highlight — rozdziel na zaznaczonych i resztę
-                hl_mask = df_v[nc_sc].astype(str).str.strip().isin(sc_highlight)
+                # ── Paleta kolorów ───────────────────────────────────────
+                PALETTE = [
+                    "#00BFFF","#FF6B35","#2DCA72","#FFD700","#E040FB",
+                    "#FF4444","#00E5FF","#FF9800","#69F0AE","#EA80FC",
+                    "#F06292","#80D8FF","#CCFF90","#FFD180","#B9F6CA",
+                ]
 
-                # Normalny trace
-                df_normal = df_v[~hl_mask]
-                idx_n = [df_sc.index.get_loc(i) for i in df_normal.index]
-                if not df_normal.empty:
-                    fig_sc.add_trace(go.Scatter(
-                        x=df_normal['_x'],
-                        y=df_normal['_y'],
-                        mode='markers' + ('+text' if sc_show_labels else ''),
-                        marker=dict(
-                            color=color_map[val],
-                            size=[marker_sizes[i] for i in idx_n],
-                            opacity=0.75,
-                            line=dict(color="#0d1117", width=0.5),
-                        ),
-                        text=df_normal[nc_sc].astype(str) if sc_show_labels else None,
-                        textposition="top center",
-                        textfont=dict(size=8, color="#c8d8e8"),
-                        hovertext=[hover_texts[df_v.index.get_loc(i)] for i in df_normal.index],
-                        hoverinfo="text",
-                        hoverlabel=dict(bgcolor="#1a2a3a", font=dict(color="white", size=12),
-                                        bordercolor=color_map[val]),
-                        name=val,
-                        legendgroup=val,
-                        showlegend=True,
-                    ))
+                if sc_color_by == "Pozycja":
+                    color_key = '_pos_group'
+                elif sc_color_by == "Liga":
+                    color_key = league_col
+                else:
+                    color_key = tc_sc if tc_sc else '_pos_group'
 
-                # Highlighted trace
-                df_hl = df_v[hl_mask]
-                idx_h = [df_sc.index.get_loc(i) for i in df_hl.index]
-                if not df_hl.empty:
-                    fig_sc.add_trace(go.Scatter(
-                        x=df_hl['_x'],
-                        y=df_hl['_y'],
-                        mode='markers+text',
-                        marker=dict(
-                            color=color_map[val],
-                            size=[min(marker_sizes[i] + 8, 32) for i in idx_h],
-                            opacity=1.0,
-                            line=dict(color="#FFFFFF", width=2.5),
-                            symbol='star',
-                        ),
-                        text=df_hl[nc_sc].astype(str),
-                        textposition="top center",
-                        textfont=dict(size=11, color="#FFFFFF"),
-                        hovertext=[hover_texts[df_v.index.get_loc(i)] for i in df_hl.index],
-                        hoverinfo="text",
-                        hoverlabel=dict(bgcolor="#1a2a3a", font=dict(color="white", size=12),
-                                        bordercolor="#FFFFFF"),
-                        name=f"★ {val}",
-                        legendgroup=val,
-                        showlegend=False,
-                    ))
+                color_vals  = df_sc[color_key].astype(str).fillna('N/A')
+                unique_vals = sorted(color_vals.unique())
+                color_map   = {v: PALETTE[i % len(PALETTE)] for i, v in enumerate(unique_vals)}
 
-            # Labelki sredniej
-            fig_sc.add_annotation(
-                x=x_med, y=y_hi,
-                text=f"mediana X: {x_med:.2f}",
-                showarrow=False,
-                font=dict(size=9, color="#5a6a7a"),
-                yanchor="top", xanchor="left",
-                xshift=4,
-            )
-            fig_sc.add_annotation(
-                x=x_hi, y=y_med,
-                text=f"mediana Y: {y_med:.2f}",
-                showarrow=False,
-                font=dict(size=9, color="#5a6a7a"),
-                xanchor="right", yanchor="bottom",
-                yshift=4,
-            )
+                # ── Linie sredniej (kwadranty) ───────────────────────────
+                x_med = float(df_sc['_x'].median())
+                y_med = float(df_sc['_y'].median())
 
-            x_title = _stat_label(x_col)
-            y_title = _stat_label(y_col)
-            n_players_sc = len(df_sc)
+                # ── Rozmiar bąbli ────────────────────────────────────────
+                if size_col and '_sz' in df_sc.columns:
+                    sz_min, sz_max = df_sc['_sz'].min(), df_sc['_sz'].max()
+                    sz_range = sz_max - sz_min if sz_max > sz_min else 1
+                    marker_sizes = (
+                        6 + 18 * (df_sc['_sz'] - sz_min) / sz_range
+                    ).clip(4, 24).tolist()
+                else:
+                    marker_sizes = [8] * len(df_sc)
 
-            fig_sc.update_layout(
-                xaxis=dict(
-                    title=dict(text=x_title, font=dict(color="#8899aa", size=12)),
-                    tickfont=dict(color="#8899aa", size=10),
-                    gridcolor="#1e2a38", zerolinecolor="#2a3a4e",
-                    range=[x_lo, x_hi],
-                ),
-                yaxis=dict(
-                    title=dict(text=y_title, font=dict(color="#8899aa", size=12)),
-                    tickfont=dict(color="#8899aa", size=10),
-                    gridcolor="#1e2a38", zerolinecolor="#2a3a4e",
-                    range=[y_lo, y_hi],
-                ),
-                paper_bgcolor="#0d1117",
-                plot_bgcolor="#0d1117",
-                font=dict(color="#c8d8e8"),
-                legend=dict(
-                    bgcolor="rgba(17,24,32,0.9)",
-                    bordercolor="#1e2a38",
-                    borderwidth=1,
-                    font=dict(size=11, color="#c8d8e8"),
-                    itemsizing='constant',
-                ),
-                height=640,
-                margin=dict(t=40, b=60, l=70, r=40),
-                hovermode="closest",
-            )
+                # ── Buduj wykres Plotly ──────────────────────────────────
+                fig_sc = go.Figure()
 
-            # Info kapsułka
-            st.caption(
-                f"**{n_players_sc}** graczy · "
-                f"X: *{x_title}* · Y: *{y_title}*"
-                + (f" · Rozmiar: *{_stat_label(size_col)}*" if size_col else "")
-                + f" · Mediana X: {x_med:.2f}, Y: {y_med:.2f}"
-            )
+                # Linie sredniej — kwadranty
+                x_range_pad = (df_sc['_x'].max() - df_sc['_x'].min()) * 0.05
+                y_range_pad = (df_sc['_y'].max() - df_sc['_y'].min()) * 0.05
+                x_lo = float(df_sc['_x'].min()) - x_range_pad
+                x_hi = float(df_sc['_x'].max()) + x_range_pad
+                y_lo = float(df_sc['_y'].min()) - y_range_pad
+                y_hi = float(df_sc['_y'].max()) + y_range_pad
 
-            st.plotly_chart(fig_sc, use_container_width=True)
-
-            # ── Tabela outlierów ──────────────────────────────────────
-            with st.expander("📋 Top 15 — prawy górny kwadrant (wysoki X i Y)"):
-                df_q1 = df_sc[(df_sc['_x'] >= x_med) & (df_sc['_y'] >= y_med)].copy()
-                df_q1['_score'] = (
-                    (df_q1['_x'] - x_med) / (df_sc['_x'].std() + 1e-9) +
-                    (df_q1['_y'] - y_med) / (df_sc['_y'].std() + 1e-9)
+                fig_sc.add_shape(type="line",
+                    x0=x_med, x1=x_med, y0=y_lo, y1=y_hi,
+                    line=dict(color="#2a3a4e", width=1, dash="dot"), layer="below"
                 )
-                df_q1 = df_q1.sort_values('_score', ascending=False).head(15)
+                fig_sc.add_shape(type="line",
+                    x0=x_lo, x1=x_hi, y0=y_med, y1=y_med,
+                    line=dict(color="#2a3a4e", width=1, dash="dot"), layer="below"
+                )
+                # Etykiety kwadrantow
+                x_lbl_r = _stat_label(x_col)
+                y_lbl_r = _stat_label(y_col)
+                quadrant_labels = [
+                    (x_hi, y_hi, "↗",  "top right",    "Wysoki X + Y"),
+                    (x_lo, y_hi, "↖",  "top left",     "Niski X, Wysoki Y"),
+                    (x_hi, y_lo, "↘",  "bottom right", "Wysoki X, Niski Y"),
+                    (x_lo, y_lo, "↙",  "bottom left",  "Niski X + Y"),
+                ]
+                for qx, qy, qarrow, qpos, qtip in quadrant_labels:
+                    fig_sc.add_annotation(
+                        x=qx, y=qy, text=qarrow,
+                        showarrow=False,
+                        font=dict(size=18, color="#2a3a4e"),
+                        xanchor="center", yanchor="middle",
+                    )
 
-                tbl_q1 = pd.DataFrame({
-                    'Gracz':         df_q1[nc_sc].astype(str).str.strip().values,
-                    'Drużyna':       df_q1[tc_sc].astype(str).str.strip().values if tc_sc else ['—']*len(df_q1),
-                    'Liga':          df_q1[league_col].astype(str).str.strip().values,
-                    'Poz.':          df_q1['_main_pos'].values,
-                    x_title:         df_q1['_x'].round(2).values,
-                    y_title:         df_q1['_y'].round(2).values,
-                    'Min.':          df_q1['_minutes'].astype(int).values,
-                })
-                st.dataframe(tbl_q1, use_container_width=True, hide_index=True)
+                # Trace per grupa kolorów
+                for val in unique_vals:
+                    mask_v = color_vals == val
+                    df_v   = df_sc[mask_v]
+                    szs    = [marker_sizes[i] for i in df_v.index.map(
+                        lambda i: df_sc.index.get_loc(i)
+                    )] if hasattr(df_sc.index, 'get_loc') else [8] * len(df_v)
 
-# =====================================================================
-#  PLAYER SEARCH TAB
-# =====================================================================
+                    # Oblicz rozmiary dla tej grupy
+                    idx_list = [df_sc.index.get_loc(i) for i in df_v.index]
+                    szs_v    = [marker_sizes[i] for i in idx_list]
+
+                    # Hover text
+                    hover_texts = []
+                    for _, row in df_v.iterrows():
+                        name  = str(row.get(nc_sc, '?')).strip()
+                        team  = str(row.get(tc_sc, '')).strip() if tc_sc else ''
+                        lg    = str(row.get(league_col, '')).strip()
+                        pos_v = str(row.get('_main_pos', '')).strip()
+                        xv    = row['_x']
+                        yv    = row['_y']
+                        mins  = int(row.get('_minutes', 0))
+                        ht = (
+                            f"<b>{name}</b><br>"
+                            f"{team} · {lg}<br>"
+                            f"Poz: {pos_v} · {mins} min<br>"
+                            f"<b>{_stat_label(x_col)}: {xv:.2f}</b><br>"
+                            f"<b>{_stat_label(y_col)}: {yv:.2f}</b>"
+                        )
+                        if size_col and '_sz' in row.index:
+                            ht += f"<br>{_stat_label(size_col)}: {row['_sz']:.2f}"
+                        hover_texts.append(ht)
+
+                    # Highlight — rozdziel na zaznaczonych i resztę
+                    hl_mask = df_v[nc_sc].astype(str).str.strip().isin(sc_highlight)
+
+                    # Normalny trace
+                    df_normal = df_v[~hl_mask]
+                    idx_n = [df_sc.index.get_loc(i) for i in df_normal.index]
+                    if not df_normal.empty:
+                        fig_sc.add_trace(go.Scatter(
+                            x=df_normal['_x'],
+                            y=df_normal['_y'],
+                            mode='markers' + ('+text' if sc_show_labels else ''),
+                            marker=dict(
+                                color=color_map[val],
+                                size=[marker_sizes[i] for i in idx_n],
+                                opacity=0.75,
+                                line=dict(color="#0d1117", width=0.5),
+                            ),
+                            text=df_normal[nc_sc].astype(str) if sc_show_labels else None,
+                            textposition="top center",
+                            textfont=dict(size=8, color="#c8d8e8"),
+                            hovertext=[hover_texts[df_v.index.get_loc(i)] for i in df_normal.index],
+                            hoverinfo="text",
+                            hoverlabel=dict(bgcolor="#1a2a3a", font=dict(color="white", size=12),
+                                            bordercolor=color_map[val]),
+                            name=val,
+                            legendgroup=val,
+                            showlegend=True,
+                        ))
+
+                    # Highlighted trace
+                    df_hl = df_v[hl_mask]
+                    idx_h = [df_sc.index.get_loc(i) for i in df_hl.index]
+                    if not df_hl.empty:
+                        fig_sc.add_trace(go.Scatter(
+                            x=df_hl['_x'],
+                            y=df_hl['_y'],
+                            mode='markers+text',
+                            marker=dict(
+                                color=color_map[val],
+                                size=[min(marker_sizes[i] + 8, 32) for i in idx_h],
+                                opacity=1.0,
+                                line=dict(color="#FFFFFF", width=2.5),
+                                symbol='star',
+                            ),
+                            text=df_hl[nc_sc].astype(str),
+                            textposition="top center",
+                            textfont=dict(size=11, color="#FFFFFF"),
+                            hovertext=[hover_texts[df_v.index.get_loc(i)] for i in df_hl.index],
+                            hoverinfo="text",
+                            hoverlabel=dict(bgcolor="#1a2a3a", font=dict(color="white", size=12),
+                                            bordercolor="#FFFFFF"),
+                            name=f"★ {val}",
+                            legendgroup=val,
+                            showlegend=False,
+                        ))
+
+                # Labelki sredniej
+                fig_sc.add_annotation(
+                    x=x_med, y=y_hi,
+                    text=f"mediana X: {x_med:.2f}",
+                    showarrow=False,
+                    font=dict(size=9, color="#5a6a7a"),
+                    yanchor="top", xanchor="left",
+                    xshift=4,
+                )
+                fig_sc.add_annotation(
+                    x=x_hi, y=y_med,
+                    text=f"mediana Y: {y_med:.2f}",
+                    showarrow=False,
+                    font=dict(size=9, color="#5a6a7a"),
+                    xanchor="right", yanchor="bottom",
+                    yshift=4,
+                )
+
+                x_title = _stat_label(x_col)
+                y_title = _stat_label(y_col)
+                n_players_sc = len(df_sc)
+
+                fig_sc.update_layout(
+                    xaxis=dict(
+                        title=dict(text=x_title, font=dict(color="#8899aa", size=12)),
+                        tickfont=dict(color="#8899aa", size=10),
+                        gridcolor="#1e2a38", zerolinecolor="#2a3a4e",
+                        range=[x_lo, x_hi],
+                    ),
+                    yaxis=dict(
+                        title=dict(text=y_title, font=dict(color="#8899aa", size=12)),
+                        tickfont=dict(color="#8899aa", size=10),
+                        gridcolor="#1e2a38", zerolinecolor="#2a3a4e",
+                        range=[y_lo, y_hi],
+                    ),
+                    paper_bgcolor="#0d1117",
+                    plot_bgcolor="#0d1117",
+                    font=dict(color="#c8d8e8"),
+                    legend=dict(
+                        bgcolor="rgba(17,24,32,0.9)",
+                        bordercolor="#1e2a38",
+                        borderwidth=1,
+                        font=dict(size=11, color="#c8d8e8"),
+                        itemsizing='constant',
+                    ),
+                    height=640,
+                    margin=dict(t=40, b=60, l=70, r=40),
+                    hovermode="closest",
+                )
+
+                # Info kapsułka
+                st.caption(
+                    f"**{n_players_sc}** graczy · "
+                    f"X: *{x_title}* · Y: *{y_title}*"
+                    + (f" · Rozmiar: *{_stat_label(size_col)}*" if size_col else "")
+                    + f" · Mediana X: {x_med:.2f}, Y: {y_med:.2f}"
+                )
+
+                st.plotly_chart(fig_sc, use_container_width=True)
+
+                # ── Tabela outlierów ──────────────────────────────────────
+                with st.expander("📋 Top 15 — prawy górny kwadrant (wysoki X i Y)"):
+                    df_q1 = df_sc[(df_sc['_x'] >= x_med) & (df_sc['_y'] >= y_med)].copy()
+                    df_q1['_score'] = (
+                        (df_q1['_x'] - x_med) / (df_sc['_x'].std() + 1e-9) +
+                        (df_q1['_y'] - y_med) / (df_sc['_y'].std() + 1e-9)
+                    )
+                    df_q1 = df_q1.sort_values('_score', ascending=False).head(15)
+
+                    tbl_q1 = pd.DataFrame({
+                        'Gracz':         df_q1[nc_sc].astype(str).str.strip().values,
+                        'Drużyna':       df_q1[tc_sc].astype(str).str.strip().values if tc_sc else ['—']*len(df_q1),
+                        'Liga':          df_q1[league_col].astype(str).str.strip().values,
+                        'Poz.':          df_q1['_main_pos'].values,
+                        x_title:         df_q1['_x'].round(2).values,
+                        y_title:         df_q1['_y'].round(2).values,
+                        'Min.':          df_q1['_minutes'].astype(int).values,
+                    })
+                    st.dataframe(tbl_q1, use_container_width=True, hide_index=True)
+
+    # =====================================================================
+    #  PLAYER SEARCH TAB
+    # =====================================================================
 with tab_search:
     st.title("🔎 Player Search")
     st.markdown(
@@ -2305,6 +2294,7 @@ with tab_search:
     st.markdown("---")
 
     # ── Wybór statystyk do filtrowania ──────────────────────────────
+    # Tylko lista nazw — zero obliczeń na danych
     ps_all_stats = _all_scatter_stats(df_raw)
     ps_stat_labels_map = {c: _stat_label(c) for c in ps_all_stats}
 
@@ -2316,70 +2306,29 @@ with tab_search:
         key="ps_selected_stats"
     )
 
-    # ── Slidery dla wybranych statystyk ─────────────────────────────
-    ps_filters = {}  # {col: (min_val, max_val)}
-
-    if ps_selected_stats and not (not ps_leagues):
-        # Buduj bazowy dataset żeby obliczyć zakresy
-        ps_pos_col = next(
-            (c for c in ['Primary position', 'Position', 'position', 'Pos']
-             if c in df_raw.columns), None
-        )
-        df_base = df_raw.copy()
-        df_base['_main_pos'] = (df_base[ps_pos_col].astype(str)
-                                .str.split(',').str[0].str.strip()
-                                if ps_pos_col else 'N/A')
-        df_base['_minutes'] = pd.to_numeric(
-            df_base.get('Minutes played', 0), errors='coerce'
-        ).fillna(0)
-
-        # Filtr ligowy dla zakresów sliderów
-        if ps_leagues:
-            mask_lg_base = df_base[league_col].astype(str).apply(_league_key).isin(
-                [_league_key(l) for l in ps_leagues]
-            )
-            df_base_filtered = df_base[mask_lg_base].copy()
-        else:
-            df_base_filtered = df_base.copy()
-
+    # ── Slidery — budowane tylko gdy jest liga i staty wybrane ───────
+    # Zakresy liczone leniwie z df_raw (szybkie, bez filtrowania)
+    ps_filters = {}
+    if ps_selected_stats and ps_leagues:
         st.markdown("#### 🎚️ Ustaw zakresy statystyk")
-        st.caption("Przesuń suwaki żeby ustawić minimalną i maksymalną wartość dla każdej statystyki")
-
+        st.caption("Przesuń suwaki, potem kliknij Search Players")
         slider_cols = st.columns(2)
         for s_idx, col_name in enumerate(ps_selected_stats):
-            series = pd.to_numeric(df_base_filtered[col_name], errors='coerce').dropna()
-            if series.empty:
+            series = pd.to_numeric(df_raw[col_name], errors='coerce').dropna()
+            if series.empty or series.min() == series.max():
                 continue
-
-            col_min = float(series.min())
-            col_max = float(series.max())
-
-            if col_min == col_max:
-                continue
-
-            # Zaokrąglenie dla czytelności
+            col_min, col_max = float(series.min()), float(series.max())
             if col_max - col_min > 100:
-                step = 1.0
-                col_min_r = float(int(col_min))
-                col_max_r = float(int(col_max) + 1)
+                step, col_min_r, col_max_r = 1.0, float(int(col_min)), float(int(col_max)+1)
             elif col_max - col_min > 10:
-                step = 0.1
-                col_min_r = round(col_min, 1)
-                col_max_r = round(col_max, 1)
+                step, col_min_r, col_max_r = 0.1, round(col_min,1), round(col_max,1)
             else:
-                step = 0.01
-                col_min_r = round(col_min, 2)
-                col_max_r = round(col_max, 2)
-
-            lbl = ps_stat_labels_map.get(col_name, col_name)
-
+                step, col_min_r, col_max_r = 0.01, round(col_min,2), round(col_max,2)
             with slider_cols[s_idx % 2]:
                 val = st.slider(
-                    lbl,
-                    min_value=col_min_r,
-                    max_value=col_max_r,
-                    value=(col_min_r, col_max_r),
-                    step=step,
+                    ps_stat_labels_map.get(col_name, col_name),
+                    min_value=col_min_r, max_value=col_max_r,
+                    value=(col_min_r, col_max_r), step=step,
                     key=f"ps_sl_{col_name}"
                 )
                 ps_filters[col_name] = val
@@ -2400,7 +2349,7 @@ with tab_search:
                     del st.session_state[k]
             st.rerun()
 
-    # ── Wyniki ──────────────────────────────────────────────────────
+    # ── Wyniki — TYLKO po kliknięciu Submit ─────────────────────────
     if not ps_submit:
         st.info("Ustaw filtry i kliknij **Search Players**.")
     elif not ps_leagues:
