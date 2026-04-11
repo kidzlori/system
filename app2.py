@@ -1516,9 +1516,15 @@ with tab_similar:
                 )
                 stat_weights_sim[c] = val
 
+    # ── Submit ───────────────────────────────────────────────────────
+    sim_submit = st.button("🔍 Find Similar Players", key="sim_submit",
+                           use_container_width=True, type="primary")
+
     # ── Obliczenia ────────────────────────────────────────────────────
 
-    if len(stat_cols_sim) < 3:
+    if not sim_submit:
+        st.info("Ustaw filtry i kliknij **Find Similar Players**.")
+    elif len(stat_cols_sim) < 3:
         st.error("Za mało statystyk dostępnych dla tej pozycji w danych.")
     else:
         # Buduj pool
@@ -1939,10 +1945,15 @@ with tab_scatter:
     y_col    = label_to_col.get(y_label)
     size_col = label_to_col.get(sc_size_label) if sc_size_label != "— brak —" else None
 
+    sc_submit = st.button("📈 Apply & Draw", key="sc_submit",
+                          use_container_width=True, type="primary")
+
     if not x_col or not y_col:
         st.error("Wybierz statystyki dla obu osi.")
     elif not sc_leagues:
         st.info("Wybierz co najmniej jedną ligę.")
+    elif not sc_submit:
+        st.info("Ustaw opcje i kliknij **Apply & Draw**.")
     else:
         # ── Budowanie datasetu ───────────────────────────────────────
         pos_col_sc = next(
@@ -2375,8 +2386,24 @@ with tab_search:
 
     st.markdown("---")
 
+    # ── Submit + Reset ───────────────────────────────────────────────
+    ps_btn_c1, ps_btn_c2 = st.columns([3, 1])
+    with ps_btn_c1:
+        ps_submit = st.button("🔎 Search Players", key="ps_submit",
+                              use_container_width=True, type="primary")
+    with ps_btn_c2:
+        ps_reset = st.button("↺ Reset Sliders", key="ps_reset",
+                             use_container_width=True)
+        if ps_reset:
+            for k in list(st.session_state.keys()):
+                if k.startswith("ps_sl_"):
+                    del st.session_state[k]
+            st.rerun()
+
     # ── Wyniki ──────────────────────────────────────────────────────
-    if not ps_leagues:
+    if not ps_submit:
+        st.info("Ustaw filtry i kliknij **Search Players**.")
+    elif not ps_leagues:
         st.info("Wybierz co najmniej jedną ligę.")
     else:
         # Buduj dataset wynikowy
@@ -2510,4 +2537,3 @@ with tab_search:
                 file_name="player_search_results.csv",
                 mime="text/csv", key="ps_download"
             )
-
