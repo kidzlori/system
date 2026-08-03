@@ -2177,19 +2177,26 @@ with tab_search:
     st.title("🔎 Player Search")
     st.markdown(
         "<p style='color:#8899aa;margin-top:-15px;'>"
-        "Filtruj graczy po ligach, wieku, minutach i dowolnych statystykach — "
-        "ustaw minimalne/maksymalne wartości dla każdej staty</p>",
+        "Filtruj graczy po ligach (lub wszystkich ligach naraz), narodowości, wieku, "
+        "minutach i dowolnych statystykach — ustaw minimalne/maksymalne wartości dla każdej staty</p>",
         unsafe_allow_html=True
     )
 
     # ── Filtry podstawowe ────────────────────────────────────────────
+    ps_all_leagues = st.checkbox(
+        "🌍 Wszystkie ligi",
+        key="ps_all_leagues",
+        help="Zaznacz, aby przeszukać wszystkie dostępne ligi jednocześnie zamiast wybierać je ręcznie."
+    )
+
     ps_c1, ps_c2, ps_c3 = st.columns([3, 1, 1])
 
     with ps_c1:
         ps_leagues = st.multiselect(
             "Liga(i)", available_leagues,
             default=[available_leagues[0]] if available_leagues else [],
-            key="ps_leagues"
+            key="ps_leagues",
+            disabled=ps_all_leagues
         )
     with ps_c2:
         ps_min_min = st.number_input(
@@ -2209,6 +2216,34 @@ with tab_search:
         default=[],
         key="ps_pos"
     )
+
+    # Filtr narodowości (kolumna 'Passport country' z CSV)
+    ps_passport_col = next(
+        (c for c in ['Passport country', 'Passport Country', 'passport country',
+                      'Passport countries', 'Passport Countries']
+         if c in df_raw.columns), None
+    )
+    if ps_passport_col:
+        _ps_nat_set = set()
+        for _v in df_raw[ps_passport_col].dropna().astype(str):
+            for _part in _v.split(','):
+                _part = _part.strip()
+                if _part:
+                    _ps_nat_set.add(_part)
+        ps_nat_options = sorted(_ps_nat_set)
+    else:
+        ps_nat_options = []
+
+    ps_nationalities = st.multiselect(
+        "Narodowość (puste = wszystkie)",
+        ps_nat_options,
+        default=[],
+        key="ps_nationalities",
+        help="Filtruje po kolumnie 'Passport country'. Gracze z podwójnym obywatelstwem "
+             "pasują, jeśli którykolwiek z ich paszportów znajduje się na liście."
+    )
+    if not ps_passport_col:
+        st.caption("⚠️ Brak kolumny 'Passport country' w danych — filtr narodowości niedostępny.")
 
     # Filtr wieku
     ps_age_c1, ps_age_c2 = st.columns(2)
@@ -2260,7 +2295,7 @@ with tab_search:
     # ── Slidery — budowane tylko gdy jest liga i staty wybrane ───────
     # Zakresy liczone leniwie z df_raw (szybkie, bez filtrowania)
     ps_filters = {}
-    if ps_selected_stats and ps_leagues:
+    if ps_selected_stats and (ps_leagues or ps_all_leagues):
         st.markdown("#### 🎚️ Ustaw zakresy statystyk")
         st.caption("Przesuń suwaki, potem kliknij Search Players")
         slider_cols = st.columns(2)
@@ -2303,8 +2338,8 @@ with tab_search:
     # ── Wyniki — TYLKO po kliknięciu Submit ─────────────────────────
     if not ps_submit:
         st.info("Ustaw filtry i kliknij **Search Players**.")
-    elif not ps_leagues:
-        st.info("Wybierz co najmniej jedną ligę.")
+    elif not ps_leagues and not ps_all_leagues:
+        st.info("Wybierz co najmniej jedną ligę (lub zaznacz **🌍 Wszystkie ligi**).")
     else:
         # Buduj dataset wynikowy
         ps_pos_col2 = next(
@@ -2323,11 +2358,12 @@ with tab_search:
             df_res.get('Minutes played', 0), errors='coerce'
         ).fillna(0)
 
-        # 1. Liga
-        mask_lg2 = df_res[league_col].astype(str).apply(_league_key).isin(
-            [_league_key(l) for l in ps_leagues]
-        )
-        df_res = df_res[mask_lg2].copy()
+        # 1. Liga (pomijamy filtrowanie, jeśli wybrano "Wszystkie ligi")
+        if not ps_all_leagues:
+            mask_lg2 = df_res[league_col].astype(str).apply(_league_key).isin(
+                [_league_key(l) for l in ps_leagues]
+            )
+            df_res = df_res[mask_lg2].copy()
 
         # 2. Minuty
         df_res = df_res[
@@ -2341,6 +2377,18 @@ with tab_search:
             for g in ps_pos_groups:
                 allowed_pos2.update(SCATTER_POS_ALLOWED.get(g, set()))
             df_res = df_res[df_res['_main_pos'].isin(allowed_pos2)]
+
+        # 3b. Narodowość (Passport country) — obsługa podwójnego obywatelstwa
+        if ps_nationalities and ps_passport_col and ps_passport_col in df_res.columns:
+            _sel_nat_set = set(ps_nationalities)
+
+            def _nat_match(v):
+                if pd.isna(v):
+                    return False
+                parts = {p.strip() for p in str(v).split(',') if p.strip()}
+                return bool(parts & _sel_nat_set)
+
+            df_res = df_res[df_res[ps_passport_col].apply(_nat_match)]
 
         # 4. Wiek
         if age_ps and ps_age_min > 14 or ps_age_max < 40:
@@ -2414,6 +2462,8 @@ with tab_search:
                 if age_ps:
                     _a = pd.to_numeric(r.get(age_ps, np.nan), errors='coerce')
                     row_d['Wiek'] = int(_a) if not np.isnan(_a) else '—'
+                if ps_passport_col:
+                    row_d['Narodowość'] = str(r.get(ps_passport_col, '—')).strip()
                 # Kontrakt
                 _cc = next((c for c in ['Contract expires', 'Contract Expires',
                                         'contract_expires', 'Contract expiry']
